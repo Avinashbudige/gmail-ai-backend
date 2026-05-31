@@ -21,3 +21,15 @@ spring:
 
 gmail:
   mode: mock
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    driverClassName: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update

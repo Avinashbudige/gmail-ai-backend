@@ -36,6 +36,8 @@ services:
       - SPRING_DATASOURCE_PASSWORD=postgres_secure_password
       - GATEWAY_URL=http://api-gateway:3000
       - GMAIL_MODE=${GMAIL_MODE}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
     depends_on:
       - postgres
 

@@ -14,20 +14,43 @@ public class GmailClient {
     @Value("${gmail.mode:mock}")
     private String gmailMode;
 
+    @Value("${GOOGLE_CLIENT_ID:}")
+    private String clientId;
+
+    @Value("${GOOGLE_CLIENT_SECRET:}")
+    private String clientSecret;
+
     private int mockEmailCounter = 0;
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public List<Email> fetchUnreadEmails(UUID userId, String accessToken, LocalDateTime lastSyncTime) {
+    // Helper method to get a fresh access token using the refresh token
+    private String getFreshAccessToken(String refreshToken) {
+        String url = "https://oauth2.googleapis.com/token";
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        String requestBody = "client_id=" + clientId +
+                             "&client_secret=" + clientSecret +
+                             "&refresh_token=" + refreshToken +
+                             "&grant_type=refresh_token";
+
+        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+        ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+        return (String) response.getBody().get("access_token");
+    }
+
+    public List<Email> fetchUnreadEmails(UUID userId, String refreshToken, LocalDateTime lastSyncTime) {
         if ("mock".equalsIgnoreCase(gmailMode)) {
             return generateMockEmails(userId);
         }
         
         try {
+            String accessToken = getFreshAccessToken(refreshToken);
+
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            // 1. Get the list of unread message IDs from Gmail
             String listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread";
             ResponseEntity<Map> listResponse = restTemplate.exchange(listUrl, HttpMethod.GET, entity, Map.class);
             
@@ -39,8 +62,6 @@ public class GmailClient {
             List<Email> fetchedEmails = new ArrayList<>();
             for (Map<String, String> msg : messages) {
                 String msgId = msg.get("id");
-                
-                // 2. Fetch the full message details for each ID
                 String msgUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + msgId + "?format=full";
                 ResponseEntity<Map> msgResponse = restTemplate.exchange(msgUrl, HttpMethod.GET, entity, Map.class);
                 Map<String, Object> msgBody = msgResponse.getBody();
@@ -55,7 +76,6 @@ public class GmailClient {
                     if ("Subject".equalsIgnoreCase(header.get("name"))) subject = header.get("value");
                 }
                 
-                // We use the snippet for the AI context since it's pre-parsed by Google
                 String snippet = (String) msgBody.get("snippet");
 
                 Email email = new Email();
@@ -103,25 +123,25 @@ public class GmailClient {
         return mockEmails;
     }
 
-    public void insertDraft(String accessToken, String threadId, String replyBody) {
+    public void insertDraft(String refreshToken, String threadId, String replyBody) {
         if ("mock".equalsIgnoreCase(gmailMode)) {
             return;
         }
     }
 
-    public String sendEmail(String accessToken, String threadId, String to, String subject, String body) {
+    public String sendEmail(String refreshToken, String threadId, String to, String subject, String body) {
         if ("mock".equalsIgnoreCase(gmailMode)) {
             return "msg_live_" + UUID.randomUUID().toString().substring(0, 8);
         }
 
         try {
-            // Build standard raw RFC 822 email string
+            String accessToken = getFreshAccessToken(refreshToken);
+
             String rawEmailStr = "To: " + to + "\r\n" +
                                  "Subject: " + subject + "\r\n" +
                                  "In-Reply-To: " + threadId + "\r\n\r\n" +
                                  body;
             
-            // Gmail API requires Base64URL encoding without padding
             String encodedEmail = Base64.getUrlEncoder().withoutPadding().encodeToString(rawEmailStr.getBytes());
 
             HttpHeaders headers = new HttpHeaders();

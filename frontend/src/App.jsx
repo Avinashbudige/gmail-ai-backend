@@ -3,11 +3,25 @@ import './index.css'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 
+import PrivacyPolicy from './pages/PrivacyPolicy'
+import TermsOfService from './pages/TermsOfService'
+
 const API_BASE = 'https://draftly.email';
 
 function App() {
   const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
+
+  // Simple path-based routing for legal pages
+  const currentPath = window.location.pathname;
+
+  if (currentPath === '/privacy') {
+    return <PrivacyPolicy />;
+  }
+
+  if (currentPath === '/terms') {
+    return <TermsOfService />;
+  }
 
   useEffect(() => {
     // Check if we already have a token saved

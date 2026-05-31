@@ -9,6 +9,8 @@ spring:
     driverClassName: org.h2.Driver
     username: sa
     password: password
+    hikari:
+      maximum-pool-size: 100
   h2:
     console:
       enabled: true
@@ -41,6 +43,8 @@ spring:
       on-profile: prod
   datasource:
     driverClassName: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 100
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:

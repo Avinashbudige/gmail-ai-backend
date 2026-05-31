@@ -155,9 +155,9 @@ public class EmailSyncService {
             headers.set("Content-Type", "application/json");
 
             Map<String, Object> body = Map.of(
-                "sender", email.getSender(),
-                "subject", email.getSubject(),
-                "body", email.getBody(),
+                "sender", email.getSender() != null ? email.getSender() : "Unknown Sender",
+                "subject", email.getSubject() != null ? email.getSubject() : "No Subject",
+                "body", email.getBody() != null ? email.getBody() : "",
                 "tone", user.getPreferredTone().toString(),
                 "signature", user.getSignature() != null ? user.getSignature() : ""
             );

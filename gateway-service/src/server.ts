@@ -124,19 +124,10 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
       expiresIn: '24h'
     });
 
-    // In a full application, we would redirect to a frontend with the token
-    res.json({
-      message: 'Authentication successful!',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        preferredTone: user.preferredTone,
-        signature: user.signature,
-        autoApprove: user.autoApprove
-      }
-    });
-  } catch (error: any) {
+      // Redirect the user back to the React Frontend Dashboard, passing the JWT token
+      const frontendUrl = 'http://localhost:5173/dashboard';
+      res.redirect(`${frontendUrl}?token=${token}`);
+    } catch (error: any) {
     console.error('[Gateway] OAuth Error:', error.message);
     res.status(500).json({ error: 'Authentication failed', details: error.message });
   }

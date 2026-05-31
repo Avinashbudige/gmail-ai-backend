@@ -25,9 +25,9 @@ public class DraftController {
     }
 
     @GetMapping("/pending")
-    public ResponseEntity<List<Draft>> getPendingDrafts(@RequestHeader("X-User-ID") String xUserId) {
+    public ResponseEntity<List<Map<String, Object>>> getPendingDrafts(@RequestHeader("X-User-ID") String xUserId) {
         UUID userId = UUID.fromString(xUserId);
-        return ResponseEntity.ok(draftService.getPendingDraftsForUser(userId));
+        return ResponseEntity.ok(draftService.getPendingDraftsWithEmail(userId));
     }
 
     @PutMapping("/{id}")

@@ -1,4 +1,5 @@
 
+
 services:
   # Node.js API Gateway container
   api-gateway:
@@ -10,9 +11,13 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
-      - JWT_SECRET=super_secret_jwt_sign_key_for_local_testing_1234
+      - JWT_SECRET=${JWT_SECRET}
       - CORE_SERVICE_URL=http://core-service:8080
-      - GMAIL_MODE=mock
+      - GMAIL_MODE=${GMAIL_MODE}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
       - core-service
 

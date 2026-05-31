@@ -1,0 +1,27 @@
+{
+  "name": "gateway-service",
+  "version": "1.0.0",
+  "description": "Node.js API Gateway & Auth Service",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/server.ts"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.6.8",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.6",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^20.12.7",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.4.5"
+  }
+}

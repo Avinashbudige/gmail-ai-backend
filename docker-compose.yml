@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Node.js API Gateway container
+  api-gateway:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: gmailai-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=super_secret_jwt_sign_key_for_local_testing_1234
+      - CORE_SERVICE_URL=http://core-service:8080
+      - GMAIL_MODE=mock
+    depends_on:
+      - core-service
+
+  # Java Core Service container
+  core-service:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: gmailai-core-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod # Switches DB connection to PostgreSQL container
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/gmailai
+      - SPRING_DATASOURCE_USERNAME=gmailai
+      - SPRING_DATASOURCE_PASSWORD=postgres_secure_password
+      - GATEWAY_URL=http://api-gateway:3000
+    depends_on:
+      - postgres
+
+  # Relational Database: PostgreSQL container
+  postgres:
+    image: postgres:15-alpine
+    container_name: gmailai-postgres
+    environment:
+      POSTGRES_DB: gmailai
+      POSTGRES_USER: gmailai
+      POSTGRES_PASSWORD: postgres_secure_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Document Database: MongoDB container
+  mongodb:
+    image: mongo:6-jammy
+    container_name: gmailai-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  # Cache / Session Store: Redis container
+  redis:
+    image: redis:7-alpine
+    container_name: gmailai-redis
+    ports:
+      - "6379:6379"
+
+  # Message Broker: RabbitMQ container
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: gmailai-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: gmailai
+      RABBITMQ_DEFAULT_PASS: rabbitmq_secure_password
+
+volumes:
+  postgres_data:
+  mongo_data:

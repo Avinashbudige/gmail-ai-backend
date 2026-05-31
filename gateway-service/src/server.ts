@@ -244,21 +244,97 @@ Body: ${body}`;
 
 
 // ----------------------------------------------------
+// INTERNAL AI DRAFT REFINEMENT ENDPOINT
+// ----------------------------------------------------
+app.post('/internal/ai/refine', async (req: Request, res: Response) => {
+  const { originalEmail, currentDraft, userPrompt } = req.body;
+
+  if (GMAIL_MODE === 'mock') {
+    return res.json({ draft: `[Mock AI Copilot Refined]: ${currentDraft}\n(Refined with: ${userPrompt})`, provider: 'mock' });
+  }
+
+  try {
+    const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('AI API key missing');
+
+    const providerUrl = process.env.GROQ_API_KEY 
+      ? 'https://api.groq.com/openai/v1/chat/completions' 
+      : 'https://api.openai.com/v1/chat/completions';
+    const modelName = process.env.GROQ_API_KEY ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+    
+    const systemPrompt = `You are an expert email assistant refining a draft. 
+The user has provided an instruction to modify the draft.
+Original Email Context: ${originalEmail}
+Current Draft: ${currentDraft}
+
+Rule:
+- Return ONLY the refined email text. No pleasantries, no markdown blocks, no 'Here is your refined draft'. Just the exact email content to be sent.`;
+
+    // --- Exponential Backoff Retry Logic ---
+    let response;
+    let retries = 3;
+    let attempt = 0;
+
+    while (attempt <= retries) {
+      try {
+        response = await axios.post(providerUrl, {
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Instruction: ${userPrompt}` }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
+        }, {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        break; 
+      } catch (err: any) {
+        if (err.response && err.response.status === 429 && attempt < retries) {
+          attempt++;
+          const delayMs = Math.pow(2, attempt) * 1000; 
+          console.warn(`[Gateway] Rate limited (429). Retrying attempt ${attempt} in ${delayMs}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          throw err; 
+        }
+      }
+    }
+
+    if (!response) {
+      throw new Error('AI provider did not return a response');
+    }
+
+    const aiReply = response.data.choices[0].message.content;
+    res.json({ draft: aiReply, provider: modelName });
+  } catch (error: any) {
+    console.error('[Gateway] AI Refinement Error:', error.message);
+    res.status(500).json({ error: 'AI refinement failed', details: error.message });
+  }
+});
+
+
+// ----------------------------------------------------
 // PROXY AGENT ROUTING (PROXIES TO SPRING BOOT CORE)
 // ----------------------------------------------------
 app.all('/api/*', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const targetUrl = `${CORE_SERVICE_URL}${req.originalUrl}`;
     
+    // Create a copy of headers to avoid mutating the original request
+    const proxyHeaders = { ...req.headers };
+    delete proxyHeaders['host'];
+    delete proxyHeaders['content-length']; // IMPORTANT: Let axios recalculate content-length for the new JSON string
+    
+    proxyHeaders['X-User-ID'] = req.user?.id;
+    proxyHeaders['Content-Type'] = 'application/json';
+
     const response = await axios({
       method: req.method,
       url: targetUrl,
       data: req.body,
-      headers: {
-        'X-User-ID': req.user?.id, // Forward authenticated User UUID
-        'Content-Type': 'application/json'
-      },
-      validateStatus: () => true // Allow proxying of any status (400, 404, 500, etc.)
+      headers: proxyHeaders,
+      validateStatus: () => true
     });
 
     res.status(response.status).json(response.data);

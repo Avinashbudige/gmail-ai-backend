@@ -78,4 +78,48 @@ public class DraftService {
     public String approveAndSendDraft(UUID draftId, UUID userId) {
         return sendService.sendApprovedDraft(draftId, userId);
     }
+
+    public Draft refineDraft(UUID draftId, UUID userId, String prompt, String gatewayUrl, org.springframework.web.client.RestTemplate restTemplate) {
+        Draft draft = draftRepository.findById(draftId)
+                .orElseThrow(() -> new IllegalArgumentException("Draft not found: " + draftId));
+
+        if (!draft.getUserId().equals(userId)) {
+            throw new SecurityException("Unauthorized action.");
+        }
+
+        var emailOpt = emailRepository.findById(draft.getEmailId());
+        if (emailOpt.isEmpty()) throw new RuntimeException("Original email not found");
+        var email = emailOpt.get();
+
+        String currentDraftText = draft.getEditedContent() != null ? draft.getEditedContent() : 
+                                  (draft.getGeneratedContent() != null ? draft.getGeneratedContent() : "");
+
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.set("Content-Type", "application/json");
+
+        Map<String, Object> body = Map.of(
+            "originalEmail", "From: " + (email.getSender() != null ? email.getSender() : "") + 
+                             "\nSubject: " + (email.getSubject() != null ? email.getSubject() : "") + 
+                             "\n\n" + (email.getBody() != null ? email.getBody() : ""),
+            "currentDraft", currentDraftText,
+            "userPrompt", prompt != null ? prompt : ""
+        );
+
+        org.springframework.http.HttpEntity<Map<String, Object>> entity = new org.springframework.http.HttpEntity<>(body, headers);
+        
+        try {
+            Map<String, String> response = restTemplate.postForObject(gatewayUrl + "/internal/ai/refine", entity, Map.class);
+            if (response != null && response.containsKey("draft")) {
+                String refinedText = response.get("draft");
+                draft.setEditedContent(refinedText);
+                draft.setStatus(Draft.DraftStatus.EDITED);
+                draft.setEditedAt(LocalDateTime.now());
+                return draftRepository.save(draft);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to refine draft via AI Gateway: " + e.getMessage());
+        }
+        
+        throw new RuntimeException("Failed to refine draft");
+    }
 }

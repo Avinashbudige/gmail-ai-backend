@@ -13,9 +13,14 @@ import java.util.UUID;
 public class DraftController {
 
     private final DraftService draftService;
+    private final org.springframework.web.client.RestTemplate restTemplate;
+
+    @org.springframework.beans.factory.annotation.Value("${GATEWAY_URL:http://localhost:3000}")
+    private String gatewayUrl;
 
     public DraftController(DraftService draftService) {
         this.draftService = draftService;
+        this.restTemplate = new org.springframework.web.client.RestTemplate();
     }
 
     @GetMapping
@@ -72,5 +77,20 @@ public class DraftController {
                 "message", e.getMessage()
             ));
         }
+    }
+
+    @PostMapping("/{id}/refine")
+    public ResponseEntity<Draft> refineDraft(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-ID") String xUserId,
+            @RequestBody Map<String, String> request) {
+        
+        UUID userId = UUID.fromString(xUserId);
+        String prompt = request.get("prompt");
+        if (prompt == null || prompt.trim().isEmpty()) {
+            return ResponseEntity.badRequest().build();
+        }
+        
+        return ResponseEntity.ok(draftService.refineDraft(id, userId, prompt, gatewayUrl, restTemplate));
     }
 }

@@ -8,6 +8,10 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
+  
+  // AI Copilot State
+  const [refinePrompt, setRefinePrompt] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
 
   // Helper to show toast notifications
   const showToast = (message, type = 'success') => {
@@ -130,6 +134,40 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
       showToast('Network error: Could not save draft', 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // AI Copilot: Refine Draft
+  const handleRefineDraft = async (e) => {
+    e.preventDefault();
+    if (!selectedDraft || !refinePrompt.trim()) return;
+    
+    setIsRefining(true);
+    try {
+      const response = await fetch(`${apiBase}/api/drafts/${selectedDraft.id}/refine`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prompt: refinePrompt })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Update the textarea with the new refined content
+        setEditedContent(data.editedContent || data.generatedContent);
+        setRefinePrompt('');
+        showToast('✨ Draft refined by AI');
+        // Refresh drafts list in the background
+        fetchDrafts();
+      } else {
+        showToast('Failed to refine draft', 'error');
+      }
+    } catch (error) {
+      showToast('Network error: Could not connect to AI', 'error');
+    } finally {
+      setIsRefining(false);
     }
   };
 
@@ -306,11 +344,34 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
                   <div className="detail-section">
                     <div className="detail-section-label">AI Generated Reply</div>
                     <textarea
-                      className="detail-draft-editor"
+                      className={`detail-draft-editor ${isRefining ? 'shimmer-bg' : ''}`}
                       value={editedContent}
                       onChange={(e) => setEditedContent(e.target.value)}
                       id="draft-editor"
+                      disabled={isRefining}
                     />
+                    
+                    {/* AI Copilot Input */}
+                    <form className="copilot-container" onSubmit={handleRefineDraft}>
+                      <div className="copilot-input-wrapper">
+                        <span className="copilot-icon">✨</span>
+                        <input
+                          type="text"
+                          className="copilot-input"
+                          placeholder="Tell the AI how to rewrite this draft... (e.g. 'Make it more polite')"
+                          value={refinePrompt}
+                          onChange={(e) => setRefinePrompt(e.target.value)}
+                          disabled={isRefining}
+                        />
+                      </div>
+                      <button 
+                        type="submit" 
+                        className="copilot-btn"
+                        disabled={isRefining || !refinePrompt.trim()}
+                      >
+                        {isRefining ? 'Refining...' : 'Refine'}
+                      </button>
+                    </form>
                   </div>
                 </div>
 

@@ -124,10 +124,10 @@ app.get('/auth/callback', async (req: Request, res: Response) => {
       expiresIn: '24h'
     });
 
-      // Redirect the user back to the React Frontend Dashboard, passing the JWT token
-      const frontendUrl = 'http://localhost:5173/dashboard';
-      res.redirect(`${frontendUrl}?token=${token}`);
-    } catch (error: any) {
+    // Redirect the user back to the React Frontend Dashboard, passing the JWT token
+    const frontendUrl = process.env.FRONTEND_URL || 'https://draftly.email/dashboard';
+    res.redirect(`${frontendUrl}?token=${token}`);
+  } catch (error: any) {
     console.error('[Gateway] OAuth Error:', error.message);
     res.status(500).json({ error: 'Authentication failed', details: error.message });
   }

@@ -22,6 +22,18 @@ spring:
 gmail:
   mode: mock
 
+# Email processing configuration
+email:
+  processing:
+    thread-pool-size: 10
+    rate-limit-requests-per-minute: 30
+
+# Token cache configuration
+token:
+  cache:
+    max-size: 1000
+    expiration-minutes: 55
+
 ---
 spring:
   config:

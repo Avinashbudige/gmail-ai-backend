@@ -13,9 +13,17 @@ import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class EmailSyncService {
@@ -25,21 +33,48 @@ public class EmailSyncService {
     private final DraftRepository draftRepository;
     private final GmailClient gmailClient;
     private final UserService userService;
+    private final RateLimiterService rateLimiterService;
     private final RestTemplate restTemplate = new RestTemplate();
+    private ExecutorService executorService;
 
     @Value("${gateway.url:http://localhost:3000}")
     private String gatewayUrl;
+
+    @Value("${email.processing.thread-pool-size:10}")
+    private int threadPoolSize;
 
     public EmailSyncService(UserRepository userRepository, 
                             EmailRepository emailRepository,
                             DraftRepository draftRepository,
                             GmailClient gmailClient,
-                            UserService userService) {
+                            UserService userService,
+                            RateLimiterService rateLimiterService) {
         this.userRepository = userRepository;
         this.emailRepository = emailRepository;
         this.draftRepository = draftRepository;
         this.gmailClient = gmailClient;
         this.userService = userService;
+        this.rateLimiterService = rateLimiterService;
+    }
+
+    @PostConstruct
+    public void init() {
+        this.executorService = Executors.newFixedThreadPool(threadPoolSize);
+        System.out.println("[EmailSyncService] Initialized with thread pool size: " + threadPoolSize);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executorService.shutdown();
+        try {
+            if (!executorService.awaitTermination(60, TimeUnit.SECONDS)) {
+                executorService.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executorService.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        System.out.println("[EmailSyncService] Thread pool shut down");
     }
 
     // Runs every 20 seconds to pull email updates in local dev mode
@@ -65,26 +100,45 @@ public class EmailSyncService {
             user.getLastSyncTime()
         );
 
+        // Create list to hold CompletableFutures for parallel processing
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+
         for (Email email : fetchedEmails) {
-            // Check if this message was already fetched
+            // Check if this message was already fetched (duplicate detection)
             if (emailRepository.existsByGmailMessageId(email.getGmailMessageId())) {
                 continue;
             }
 
-            email.setStatus(Email.EmailStatus.PROCESSING);
-            Email savedEmail = emailRepository.save(email);
+            // Process each email asynchronously in parallel
+            CompletableFuture<Void> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    // Acquire rate limiter token (blocks until available)
+                    rateLimiterService.acquire();
 
-            // Trigger AI draft generation (async)
-            generateAiDraftForEmail(user, savedEmail);
-            
-            // TRAFFIC SHAPING: Pause for 2.5 seconds to stay under Groq's 30 Request/Min limit
-            try {
-                Thread.sleep(2500);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+                    // Set email status to PROCESSING
+                    email.setStatus(Email.EmailStatus.PROCESSING);
+                    Email savedEmail = emailRepository.save(email);
+
+                    // Trigger AI draft generation
+                    generateAiDraftForEmail(user, savedEmail);
+                    
+                    return null;
+                } catch (Exception e) {
+                    // Error handling: isolate failures to individual emails
+                    System.err.println("[EmailSync] Error processing email " + email.getGmailMessageId() + ": " + e.getMessage());
+                    email.setStatus(Email.EmailStatus.FAILED);
+                    emailRepository.save(email);
+                    return null;
+                }
+            }, executorService);
+
+            futures.add(future);
         }
 
+        // Wait for all emails to be processed
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+        // Update user's last sync time after all emails are processed
         user.setLastSyncTime(LocalDateTime.now());
         userRepository.save(user);
     }

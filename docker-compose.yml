@@ -1,6 +1,15 @@
 
 
 services:
+  # React Frontend (served via Nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gmailai-frontend
+    ports:
+      - "8081:80"
+
   # Node.js API Gateway container
   api-gateway:
     build:
@@ -18,6 +27,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - FRONTEND_URL=${FRONTEND_URL}
     depends_on:
       - core-service
 

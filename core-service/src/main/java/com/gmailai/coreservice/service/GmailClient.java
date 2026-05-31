@@ -22,21 +22,17 @@ public class GmailClient {
 
     private int mockEmailCounter = 0;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final TokenCacheService tokenCacheService;
+
+    // Constructor injection for TokenCacheService
+    public GmailClient(TokenCacheService tokenCacheService) {
+        this.tokenCacheService = tokenCacheService;
+    }
 
     // Helper method to get a fresh access token using the refresh token
+    // Now delegates to TokenCacheService for caching
     private String getFreshAccessToken(String refreshToken) {
-        String url = "https://oauth2.googleapis.com/token";
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-        String requestBody = "client_id=" + clientId +
-                             "&client_secret=" + clientSecret +
-                             "&refresh_token=" + refreshToken +
-                             "&grant_type=refresh_token";
-
-        HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
-        return (String) response.getBody().get("access_token");
+        return tokenCacheService.getAccessToken(refreshToken);
     }
 
     public List<Email> fetchUnreadEmails(UUID userId, String refreshToken, LocalDateTime lastSyncTime) {

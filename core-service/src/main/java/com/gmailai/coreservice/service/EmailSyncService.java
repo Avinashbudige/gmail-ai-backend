@@ -76,6 +76,13 @@ public class EmailSyncService {
 
             // Trigger AI draft generation (async)
             generateAiDraftForEmail(user, savedEmail);
+            
+            // TRAFFIC SHAPING: Pause for 2.5 seconds to stay under Groq's 30 Request/Min limit
+            try {
+                Thread.sleep(2500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         user.setLastSyncTime(LocalDateTime.now());

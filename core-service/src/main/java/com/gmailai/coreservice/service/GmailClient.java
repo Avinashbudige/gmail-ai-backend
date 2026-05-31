@@ -51,7 +51,7 @@ public class GmailClient {
             headers.setBearerAuth(accessToken);
             HttpEntity<String> entity = new HttpEntity<>(headers);
 
-            String listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread";
+            String listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=is:unread category:primary -from:no-reply";
             ResponseEntity<Map> listResponse = restTemplate.exchange(listUrl, HttpMethod.GET, entity, Map.class);
             
             List<Map<String, String>> messages = (List<Map<String, String>>) listResponse.getBody().get("messages");

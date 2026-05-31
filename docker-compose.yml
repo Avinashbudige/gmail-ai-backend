@@ -54,15 +54,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # Document Database: MongoDB container
-  mongodb:
-    image: mongo:6-jammy
-    container_name: gmailai-mongodb
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-
   # Cache / Session Store: Redis container
   redis:
     image: redis:7-alpine

@@ -199,20 +199,52 @@ From: ${sender}
 Subject: ${subject}
 Body: ${body}`;
 
-    const response = await axios.post(providerUrl, {
-      model: modelName,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    }, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
-    });
+    // --- Exponential Backoff Retry Logic ---
+    let response;
+    let retries = 3;
+    let attempt = 0;
+
+    while (attempt <= retries) {
+      try {
+        response = await axios.post(providerUrl, {
+          model: modelName,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
+        }, {
+          headers: { 'Authorization': `Bearer ${apiKey}` }
+        });
+        
+        // If successful, break out of the retry loop
+        break; 
+
+      } catch (err: any) {
+        // If the error is an HTTP 429 (Rate Limit Exceeded) and we have retries left
+        if (err.response && err.response.status === 429 && attempt < retries) {
+          attempt++;
+          // Calculate exponential delay: 2s, 4s, 8s
+          const delayMs = Math.pow(2, attempt) * 1000; 
+          console.warn(`[Gateway] Rate limited (429). Retrying attempt ${attempt} in ${delayMs}ms...`);
+          
+          // Pause execution for the calculated delay before restarting the loop
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          // If it's a different error (e.g. 401 Unauthorized), or we ran out of retries, throw it
+          throw err; 
+        }
+      }
+    }
+
+    if (!response) {
+      throw new Error('AI provider did not return a response');
+    }
 
     const aiReply = response.data.choices[0].message.content;
     res.json({ draft: aiReply, provider: modelName });
+    // ---------------------------------------
   } catch (error: any) {
     console.error('[Gateway] AI Generation Error:', error.message);
     res.status(500).json({ error: 'AI generation failed', details: error.message });

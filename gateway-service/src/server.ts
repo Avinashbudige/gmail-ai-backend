@@ -319,7 +319,14 @@ Rule:
 // ----------------------------------------------------
 // PROXY AGENT ROUTING (PROXIES TO SPRING BOOT CORE)
 // ----------------------------------------------------
-app.all('/api/*', authenticateJWT, async (req: AuthenticatedRequest, res: Response) => {
+app.all('/api/*', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  // Bypass JWT authentication for the webhook endpoint
+  if (req.originalUrl.startsWith('/api/webhook/gmail')) {
+    return next();
+  }
+  // Otherwise, apply JWT authentication
+  authenticateJWT(req, res, next);
+}, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const targetUrl = `${CORE_SERVICE_URL}${req.originalUrl}`;
     

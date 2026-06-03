@@ -159,4 +159,28 @@ public class GmailClient {
             throw new RuntimeException("Failed to send email");
         }
     }
+
+    public void watchInbox(String refreshToken, String topicName) {
+        if ("mock".equalsIgnoreCase(gmailMode)) {
+            return;
+        }
+        try {
+            String accessToken = getFreshAccessToken(refreshToken);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(accessToken);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("topicName", topicName);
+            requestBody.put("labelIds", Collections.singletonList("INBOX"));
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+            String watchUrl = "https://gmail.googleapis.com/gmail/v1/users/me/watch";
+            
+            restTemplate.exchange(watchUrl, HttpMethod.POST, entity, Map.class);
+            System.out.println("[Pub/Sub] Successfully subscribed user inbox to topic: " + topicName);
+        } catch (Exception e) {
+            System.err.println("[Pub/Sub] Failed to subscribe user to topic: " + e.getMessage());
+        }
+    }
 }

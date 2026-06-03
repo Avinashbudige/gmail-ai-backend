@@ -77,18 +77,7 @@ public class EmailSyncService {
         System.out.println("[EmailSyncService] Thread pool shut down");
     }
 
-    // Runs every 20 seconds to pull email updates in local dev mode
-    @Scheduled(fixedDelay = 20000)
-    public void syncEmailsForAllUsers() {
-        List<User> users = userRepository.findAll();
-        for (User user : users) {
-            try {
-                syncUserEmails(user);
-            } catch (Exception e) {
-                System.err.println("[Sync] Failed to sync for user " + user.getEmail() + ": " + e.getMessage());
-            }
-        }
-    }
+
 
     public void syncUserEmails(User user) {
         String decryptedToken = userService.decryptUserToken(user);

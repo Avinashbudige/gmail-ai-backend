@@ -7,14 +7,22 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 import java.util.UUID;
 
+import com.gmailai.coreservice.service.GmailClient;
+import org.springframework.beans.factory.annotation.Value;
+
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
     private final UserService userService;
+    private final GmailClient gmailClient;
+    
+    @Value("${google.pubsub.topic:}")
+    private String pubsubTopic;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, GmailClient gmailClient) {
         this.userService = userService;
+        this.gmailClient = gmailClient;
     }
 
     @PostMapping("/sync-profile")
@@ -22,6 +30,11 @@ public class UserController {
         String email = request.get("email");
         String refreshToken = request.get("refreshToken");
         User user = userService.saveOrUpdateUser(email, refreshToken);
+        
+        if (pubsubTopic != null && !pubsubTopic.isEmpty()) {
+            gmailClient.watchInbox(refreshToken, pubsubTopic);
+        }
+        
         return ResponseEntity.ok(user);
     }
 

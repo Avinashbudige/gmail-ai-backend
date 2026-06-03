@@ -45,10 +45,12 @@ public class WebhookController {
             if (emailAddress != null) {
                 System.out.println("[Webhook] Received notification for: " + emailAddress);
                 
-                // Find user and trigger sync immediately
+                // Find user and trigger sync asynchronously to avoid Google Pub/Sub timeout (10s)
                 Optional<User> userOpt = userRepository.findByEmail(emailAddress);
                 if (userOpt.isPresent()) {
-                    emailSyncService.syncUserEmails(userOpt.get());
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        emailSyncService.syncUserEmails(userOpt.get());
+                    });
                 } else {
                     System.out.println("[Webhook] User not found for email: " + emailAddress);
                 }

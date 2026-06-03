@@ -177,7 +177,7 @@ app.post('/internal/ai/generate', async (req: Request, res: Response) => {
       ? 'https://api.groq.com/openai/v1/chat/completions' 
       : 'https://api.openai.com/v1/chat/completions';
 
-    const modelName = process.env.GROQ_API_KEY ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+    const modelName = process.env.GROQ_API_KEY ? 'mixtral-8x7b-32768' : 'gpt-4o-mini';
     
     const systemPrompt = `You are a helpful email assistant. Generate a reply to the incoming email.
 Tone: ${tone || 'professional'}
@@ -262,7 +262,7 @@ app.post('/internal/ai/refine', async (req: Request, res: Response) => {
     const providerUrl = process.env.GROQ_API_KEY 
       ? 'https://api.groq.com/openai/v1/chat/completions' 
       : 'https://api.openai.com/v1/chat/completions';
-    const modelName = process.env.GROQ_API_KEY ? 'llama-3.1-8b-instant' : 'gpt-4o-mini';
+    const modelName = process.env.GROQ_API_KEY ? 'mixtral-8x7b-32768' : 'gpt-4o-mini';
     
     const systemPrompt = `You are an expert email assistant refining a draft. 
 The user has provided an instruction to modify the draft.

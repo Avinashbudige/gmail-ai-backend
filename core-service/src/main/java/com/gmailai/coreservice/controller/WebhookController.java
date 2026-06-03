@@ -24,7 +24,10 @@ public class WebhookController {
         this.emailSyncService = emailSyncService;
     }
 
-    @PostMapping("/gmail")
+    // Prevent burst notifications from hammering the Gmail API
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> lastSyncMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @PostMapping(value = "/gmail", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> handleGmailWebhook(@RequestBody Map<String, Object> payload) {
         try {
             // Extract the message data from the Pub/Sub payload
@@ -43,16 +46,25 @@ public class WebhookController {
             String emailAddress = (String) dataMap.get("emailAddress");
 
             if (emailAddress != null) {
-                System.out.println("[Webhook] Received notification for: " + emailAddress);
+                // Check Debouncer (5-second cooldown per email)
+                long now = System.currentTimeMillis();
+                long lastSync = lastSyncMap.getOrDefault(emailAddress, 0L);
                 
-                // Find user and trigger sync asynchronously to avoid Google Pub/Sub timeout (10s)
-                Optional<User> userOpt = userRepository.findByEmail(emailAddress);
-                if (userOpt.isPresent()) {
-                    java.util.concurrent.CompletableFuture.runAsync(() -> {
-                        emailSyncService.syncUserEmails(userOpt.get());
-                    });
+                if (now - lastSync > 5000) {
+                    lastSyncMap.put(emailAddress, now);
+                    System.out.println("[Webhook] Received notification for: " + emailAddress);
+                    
+                    // Find user and trigger sync asynchronously to avoid Google Pub/Sub timeout (10s)
+                    Optional<User> userOpt = userRepository.findByEmail(emailAddress);
+                    if (userOpt.isPresent()) {
+                        java.util.concurrent.CompletableFuture.runAsync(() -> {
+                            emailSyncService.syncUserEmails(userOpt.get());
+                        });
+                    } else {
+                        System.out.println("[Webhook] User not found for email: " + emailAddress);
+                    }
                 } else {
-                    System.out.println("[Webhook] User not found for email: " + emailAddress);
+                    System.out.println("[Webhook] Ignored duplicate notification for: " + emailAddress + " (Debounced)");
                 }
             }
 

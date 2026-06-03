@@ -1,4 +1,4 @@
-package com.gmailai.coreservice.controller;
+package com.gmailai.coreservice.service;
 
 import com.gmailai.coreservice.model.User;
 import com.gmailai.coreservice.service.UserService;

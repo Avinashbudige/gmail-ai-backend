@@ -64,6 +64,8 @@ app.get('/auth/gmail', (req: Request, res: Response) => {
     access_type: 'offline',
     response_type: 'code',
     prompt: 'consent',
+    include_granted_scopes: 'true',
+    state: Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
     scope: [
       'https://www.googleapis.com/auth/userinfo.email',
       'https://www.googleapis.com/auth/gmail.modify'

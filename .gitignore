@@ -44,3 +44,10 @@ Desktop.ini
 client_secret_436957251553-kj8mh8gnka83cmrp44q6c1lv69umaqi6.apps.googleusercontent.com.jsonclient_secret_436957251553-kj8mh8gnka83cmrp44q6c1lv69umaqi6.apps.googleusercontent.com.json
 client_secret_*.json
 *.json  # or be more specific
+
+*.pptx 
+*.mp4
+*.kiro
+django-service
+DJANGO_MIGRATION_SUMMARY.md
+.gitignore

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export default function Dashboard({ token, user, apiBase, onLogout }) {
+// Dashboard no longer receives `token` prop — auth is via httpOnly cookie sent automatically.
+// All fetch calls use credentials: 'include' so the cookie is included on every request.
+export default function Dashboard({ user, apiBase, onLogout }) {
   const [drafts, setDrafts] = useState([]);
   const [selectedDraft, setSelectedDraft] = useState(null);
   const [editedContent, setEditedContent] = useState('');
@@ -8,7 +10,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
-  
+
   // AI Copilot State
   const [refinePrompt, setRefinePrompt] = useState('');
   const [isRefining, setIsRefining] = useState(false);
@@ -27,7 +29,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
     try {
       const endpoint = activeTab === 'pending' ? '/api/drafts/pending' : '/api/drafts';
       const response = await fetch(`${apiBase}${endpoint}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'  // sends the httpOnly cookie automatically
       });
 
       if (response.status === 401) {
@@ -43,7 +45,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
     } finally {
       setLoading(false);
     }
-  }, [token, apiBase, activeTab, onLogout]);
+  }, [apiBase, activeTab, onLogout]);
 
   useEffect(() => {
     fetchDrafts();
@@ -66,7 +68,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
     try {
       const response = await fetch(`${apiBase}/api/drafts/${selectedDraft.id}/approve`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
 
       if (response.ok) {
@@ -92,7 +94,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
     try {
       const response = await fetch(`${apiBase}/api/drafts/${selectedDraft.id}/reject`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        credentials: 'include'
       });
 
       if (response.ok) {
@@ -117,10 +119,8 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
     try {
       const response = await fetch(`${apiBase}/api/drafts/${selectedDraft.id}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ content: editedContent })
       });
 
@@ -141,25 +141,21 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
   const handleRefineDraft = async (e) => {
     e.preventDefault();
     if (!selectedDraft || !refinePrompt.trim()) return;
-    
+
     setIsRefining(true);
     try {
       const response = await fetch(`${apiBase}/api/drafts/${selectedDraft.id}/refine`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ prompt: refinePrompt })
       });
 
       if (response.ok) {
         const data = await response.json();
-        // Update the textarea with the new refined content
         setEditedContent(data.editedContent || data.generatedContent);
         setRefinePrompt('');
         showToast('✨ Draft refined by AI');
-        // Refresh drafts list in the background
         fetchDrafts();
       } else {
         showToast('Failed to refine draft', 'error');
@@ -350,7 +346,7 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
                       id="draft-editor"
                       disabled={isRefining}
                     />
-                    
+
                     {/* AI Copilot Input */}
                     <form className="copilot-container" onSubmit={handleRefineDraft}>
                       <div className="copilot-input-wrapper">
@@ -364,8 +360,8 @@ export default function Dashboard({ token, user, apiBase, onLogout }) {
                           disabled={isRefining}
                         />
                       </div>
-                      <button 
-                        type="submit" 
+                      <button
+                        type="submit"
                         className="copilot-btn"
                         disabled={isRefining || !refinePrompt.trim()}
                       >

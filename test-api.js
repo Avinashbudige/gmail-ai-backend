@@ -1,8 +1,10 @@
 // test-api.js
 // Run this script using: node test-api.js <YOUR_JWT_TOKEN>
+// Defaults to localhost:3000 for local mock-mode testing.
+// Override with: BASE_URL=https://your-domain.com node test-api.js <TOKEN>
 
 const token = process.argv[2];
-const BASE_URL = "https://draftly.email"; // Using https to prevent redirect header dropping
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 if (!token) {
   console.error("❌ Please provide your JWT token as an argument.");

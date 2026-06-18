@@ -63,7 +63,7 @@ public class SendService {
         Email email = emailRepository.findById(draft.getEmailId())
                 .orElseThrow(() -> new IllegalArgumentException("Source email not found for draft."));
 
-        // Get and decrypt user refresh token (placeholder client oauth credentials)
+        // Get and decrypt user refresh token
         User user = userService.findById(userId).orElseThrow();
         String decryptedToken = userService.decryptUserToken(user);
 
@@ -73,18 +73,22 @@ public class SendService {
         System.out.println("[SendService] Attempting to send email for draft " + draftId + " (Attempting connection...)");
 
         // 3. Send using Gmail client
+        // Pass the full Email entity so GmailClient can access RFC headers (Message-ID, References)
+        // for correct SMTP reply threading — Gmail's threadId is different from RFC's Message-ID
         String gmailMessageId = gmailClient.sendEmail(
                 decryptedToken,
-                email.getThreadId(),
+                email,                          // full Email for RFC threading headers
                 email.getSender(),
                 "Re: " + email.getSubject(),
                 bodyToSend
         );
 
-        // 4. Save audit log for sent email
+        // 4. Save audit log for sent email, including the sent body and userId for AI writing history
         SentEmail sentEmail = new SentEmail();
         sentEmail.setDraftId(draftId);
         sentEmail.setGmailMessageId(gmailMessageId);
+        sentEmail.setUserId(userId);
+        sentEmail.setSentBody(bodyToSend);  // captured for AI personalization context
         sentEmailRepository.save(sentEmail);
 
         // 5. Store idempotency key (expire in 24 hours to clean database)

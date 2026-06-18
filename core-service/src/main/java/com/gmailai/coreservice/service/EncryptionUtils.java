@@ -1,5 +1,6 @@
 package com.gmailai.coreservice.service;
 
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import javax.crypto.Cipher;
@@ -16,9 +17,32 @@ public class EncryptionUtils {
     private static final int GCM_IV_LENGTH = 12;
     private static final int GCM_TAG_LENGTH = 16; // in bytes (128 bits)
 
-    // Key must be exactly 32 bytes (256 bits) for AES-256
-    @Value("${gmail.encryption-key:thisisaverysecretkey32byteslong!}")
+    // Empty default — system MUST fail at startup if this is not set explicitly.
+    // A missing key is caught by @PostConstruct below, not silently defaulted.
+    @Value("${gmail.encryption-key:}")
     private String secretKey;
+
+    /**
+     * Validates the encryption key at application startup.
+     * Fails fast rather than silently using a missing/weak key in production.
+     */
+    @PostConstruct
+    public void validateEncryptionKey() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException(
+                "[Security] 'gmail.encryption-key' is not configured. " +
+                "Set the GMAIL_ENCRYPTION_KEY environment variable to a random 32-character secret. " +
+                "Without this, OAuth refresh tokens cannot be encrypted and the service will not start."
+            );
+        }
+        if (secretKey.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException(
+                "[Security] 'gmail.encryption-key' must be at least 32 bytes for AES-256. " +
+                "Current key is too short (" + secretKey.length() + " chars). " +
+                "Generate a secure key with: openssl rand -hex 16"
+            );
+        }
+    }
 
     public String encrypt(String plainText) {
         try {

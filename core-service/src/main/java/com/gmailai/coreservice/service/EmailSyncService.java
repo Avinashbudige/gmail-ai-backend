@@ -2,9 +2,11 @@ package com.gmailai.coreservice.service;
 
 import com.gmailai.coreservice.model.Draft;
 import com.gmailai.coreservice.model.Email;
+import com.gmailai.coreservice.model.SentEmail;
 import com.gmailai.coreservice.model.User;
 import com.gmailai.coreservice.repository.DraftRepository;
 import com.gmailai.coreservice.repository.EmailRepository;
+import com.gmailai.coreservice.repository.SentEmailRepository;
 import com.gmailai.coreservice.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -18,12 +20,14 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class EmailSyncService {
@@ -31,6 +35,7 @@ public class EmailSyncService {
     private final UserRepository userRepository;
     private final EmailRepository emailRepository;
     private final DraftRepository draftRepository;
+    private final SentEmailRepository sentEmailRepository;
     private final GmailClient gmailClient;
     private final UserService userService;
     private final RateLimiterService rateLimiterService;
@@ -43,15 +48,17 @@ public class EmailSyncService {
     @Value("${email.processing.thread-pool-size:10}")
     private int threadPoolSize;
 
-    public EmailSyncService(UserRepository userRepository, 
+    public EmailSyncService(UserRepository userRepository,
                             EmailRepository emailRepository,
                             DraftRepository draftRepository,
+                            SentEmailRepository sentEmailRepository,
                             GmailClient gmailClient,
                             UserService userService,
                             RateLimiterService rateLimiterService) {
         this.userRepository = userRepository;
         this.emailRepository = emailRepository;
         this.draftRepository = draftRepository;
+        this.sentEmailRepository = sentEmailRepository;
         this.gmailClient = gmailClient;
         this.userService = userService;
         this.rateLimiterService = rateLimiterService;
@@ -77,15 +84,13 @@ public class EmailSyncService {
         System.out.println("[EmailSyncService] Thread pool shut down");
     }
 
-
-
     public void syncUserEmails(User user) {
         String decryptedToken = userService.decryptUserToken(user);
-        
+
         // Fetch new emails
         List<Email> fetchedEmails = gmailClient.fetchUnreadEmails(
-            user.getId(), 
-            decryptedToken, 
+            user.getId(),
+            decryptedToken,
             user.getLastSyncTime()
         );
 
@@ -108,9 +113,9 @@ public class EmailSyncService {
                     email.setStatus(Email.EmailStatus.PROCESSING);
                     Email savedEmail = emailRepository.save(email);
 
-                    // Trigger AI draft generation
+                    // Trigger AI draft generation with full context
                     generateAiDraftForEmail(user, savedEmail);
-                    
+
                     return null;
                 } catch (Exception e) {
                     // Error handling: isolate failures to individual emails
@@ -134,25 +139,49 @@ public class EmailSyncService {
 
     private void generateAiDraftForEmail(User user, Email email) {
         try {
-            // Post payload to Gateway AI endpoint
             String targetUrl = gatewayUrl + "/internal/ai/generate";
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON); // or MediaType.APPLICATION_JSON
-            
-            // To ensure compatibility, we set JSON content type
-            headers.set("Content-Type", "application/json");
 
-            Map<String, Object> body = Map.of(
-                "sender", email.getSender() != null ? email.getSender() : "Unknown Sender",
-                "subject", email.getSubject() != null ? email.getSubject() : "No Subject",
-                "body", email.getBody() != null ? email.getBody() : "",
-                "tone", user.getPreferredTone().toString(),
-                "signature", user.getSignature() != null ? user.getSignature() : ""
-            );
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            // --- Build thread history context ---
+            // Fetch prior emails in the same Gmail thread so the AI has full conversation context
+            List<Map<String, String>> threadHistory = new ArrayList<>();
+            if (email.getThreadId() != null && !email.getThreadId().startsWith("mock_")) {
+                List<Email> threadEmails = emailRepository.findByThreadId(email.getThreadId());
+                for (Email threadEmail : threadEmails) {
+                    // Exclude the current email itself
+                    if (!threadEmail.getId().equals(email.getId())) {
+                        Map<String, String> entry = new HashMap<>();
+                        entry.put("sender", threadEmail.getSender() != null ? threadEmail.getSender() : "");
+                        entry.put("subject", threadEmail.getSubject() != null ? threadEmail.getSubject() : "");
+                        entry.put("body", threadEmail.getBody() != null ? threadEmail.getBody() : "");
+                        threadHistory.add(entry);
+                    }
+                }
+            }
+
+            // --- Build writing history context ---
+            // Fetch user's last 5 sent email bodies as writing style samples
+            List<String> writingHistory = sentEmailRepository
+                .findTop5ByUserIdOrderByIdDesc(user.getId())
+                .stream()
+                .filter(se -> se.getSentBody() != null && !se.getSentBody().isBlank())
+                .map(SentEmail::getSentBody)
+                .collect(Collectors.toList());
+
+            // --- Build enriched payload ---
+            Map<String, Object> body = new HashMap<>();
+            body.put("sender",   email.getSender()  != null ? email.getSender()  : "Unknown Sender");
+            body.put("subject",  email.getSubject() != null ? email.getSubject() : "No Subject");
+            body.put("body",     email.getBody()    != null ? email.getBody()    : "");
+            body.put("tone",     user.getPreferredTone().toString());
+            body.put("signature", user.getSignature() != null ? user.getSignature() : "");
+            body.put("threadHistory",  threadHistory);   // full conversation thread
+            body.put("writingHistory", writingHistory);  // past sent replies for style matching
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-            
+
             // Call gateway AI generator
             Map<String, String> response = restTemplate.postForObject(targetUrl, entity, Map.class);
 
@@ -166,7 +195,7 @@ public class EmailSyncService {
                 draft.setGeneratedContent(aiDraftContent);
                 draft.setTone(user.getPreferredTone());
                 draft.setStatus(Draft.DraftStatus.PENDING);
-                
+
                 draftRepository.save(draft);
 
                 // Update email status
@@ -183,4 +212,4 @@ public class EmailSyncService {
             System.err.println("[AI-Draft] Failed to generate draft for email ID: " + email.getId() + " - " + e.getMessage());
         }
     }
-}
+}

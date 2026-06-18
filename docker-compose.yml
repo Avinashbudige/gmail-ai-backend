@@ -1,5 +1,3 @@
-
-
 services:
   # React Frontend (served via Nginx)
   frontend:
@@ -9,6 +7,8 @@ services:
     container_name: gmailai-frontend
     ports:
       - "8081:80"
+    environment:
+      - TZ=Asia/Kolkata
 
   # Node.js API Gateway container
   api-gateway:
@@ -20,6 +20,7 @@ services:
       - "3000:3000"
     environment:
       - PORT=3000
+      - NODE_ENV=production
       - JWT_SECRET=${JWT_SECRET}
       - CORE_SERVICE_URL=http://core-service:8080
       - GMAIL_MODE=${GMAIL_MODE}
@@ -28,10 +29,19 @@ services:
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - GROQ_API_KEY=${GROQ_API_KEY}
       - FRONTEND_URL=${FRONTEND_URL}
+      - GATEWAY_URL=${GATEWAY_URL}
+      # Trust boundary: this secret is validated by the core-service on every internal request.
+      # Must match the INTERNAL_SERVICE_SECRET configured on core-service.
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET}
+      # Restrict CORS to known frontend origins only (comma-separated list)
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - TZ=Asia/Kolkata
     depends_on:
       - core-service
 
   # Java Core Service container
+  # NOTE: Port 8080 is exposed here for convenience but should NOT be publicly accessible
+  # in production. Use a firewall/security group to restrict access to the gateway only.
   core-service:
     build:
       context: ./core-service
@@ -40,7 +50,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - SPRING_PROFILES_ACTIVE=prod # Switches DB connection to PostgreSQL container
+      - SPRING_PROFILES_ACTIVE=prod  # switches DB connection to PostgreSQL container
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/gmailai
       - SPRING_DATASOURCE_USERNAME=gmailai
       - SPRING_DATASOURCE_PASSWORD=postgres_secure_password
@@ -49,6 +59,12 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_PUBSUB_TOPIC=${GOOGLE_PUBSUB_TOPIC}
+      # AES-256 key used to encrypt OAuth refresh tokens at rest.
+      # Required — service will refuse to start without this.
+      - GMAIL_ENCRYPTION_KEY=${GMAIL_ENCRYPTION_KEY}
+      # Must match the INTERNAL_SERVICE_SECRET configured on api-gateway.
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET}
+      - TZ=Asia/Kolkata
     depends_on:
       - postgres
 
@@ -61,19 +77,28 @@ services:
       POSTGRES_DB: gmailai
       POSTGRES_USER: gmailai
       POSTGRES_PASSWORD: postgres_secure_password
+      TZ: Asia/Kolkata
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
   # Cache / Session Store: Redis container
+  # NOTE: Redis is defined as an infrastructure stub for planned future use
+  # (e.g., token caching, distributed rate limiting). It is NOT yet wired to
+  # application code — the current implementation uses an in-memory cache.
   redis:
     image: redis:7-alpine
     container_name: gmailai-redis
     ports:
       - "6379:6379"
+    environment:
+      - TZ=Asia/Kolkata
 
   # Message Broker: RabbitMQ container
+  # NOTE: RabbitMQ is defined as an infrastructure stub for planned future use
+  # (e.g., async email processing queue). It is NOT yet wired to application code —
+  # the current implementation uses a fixed thread pool with in-process concurrency.
   rabbitmq:
     image: rabbitmq:3-management
     container_name: gmailai-rabbitmq
@@ -83,7 +108,8 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: gmailai
       RABBITMQ_DEFAULT_PASS: rabbitmq_secure_password
+      TZ: Asia/Kolkata
 
 volumes:
   postgres_data:
-  mongo_data:
+  # mongo_data removed — no MongoDB service uses this volume

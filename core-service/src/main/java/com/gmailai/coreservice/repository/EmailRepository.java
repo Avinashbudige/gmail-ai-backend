@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface EmailRepository extends JpaRepository<Email, UUID> {
     List<Email> findByUserId(UUID userId);
     boolean existsByGmailMessageId(String gmailMessageId);
-}
+    // Used to build thread context for AI draft generation
+    List<Email> findByThreadId(String threadId);
+}

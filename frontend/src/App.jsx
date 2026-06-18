@@ -2,15 +2,16 @@ import { useState, useEffect } from 'react'
 import './index.css'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import TermsOfService from './pages/TermsOfService'
 
-const API_BASE = 'https://draftly.email';
+// API base is configurable via environment variable.
+// Set VITE_API_BASE in frontend/.env for local dev or at build time for production.
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000';
 
 function App() {
-  const [token, setToken] = useState(null);
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // Simple path-based routing for legal pages
   const currentPath = window.location.pathname;
@@ -24,52 +25,44 @@ function App() {
   }
 
   useEffect(() => {
-    // Check if we already have a token saved
-    const savedToken = localStorage.getItem('draftly_token');
-    const savedUser = localStorage.getItem('draftly_user');
-
-    if (savedToken) {
-      setToken(savedToken);
-      if (savedUser) {
-        setUser(JSON.parse(savedUser));
-      }
-    }
-
-    // Check if we just came back from OAuth (token in the URL)
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get('token');
-
-    if (urlToken) {
-      localStorage.setItem('draftly_token', urlToken);
-      setToken(urlToken);
-
-      // Decode the JWT to get user info (payload is the 2nd part)
-      try {
-        const payload = JSON.parse(atob(urlToken.split('.')[1]));
-        const userData = { id: payload.id, email: payload.email };
-        localStorage.setItem('draftly_user', JSON.stringify(userData));
-        setUser(userData);
-      } catch (e) {
-        console.error('Failed to decode JWT:', e);
-      }
-
-      // Clean the URL so the token isn't visible in the browser bar
-      window.history.replaceState({}, document.title, '/dashboard');
-    }
+    // The JWT is now in an httpOnly cookie — we cannot read it from JavaScript.
+    // Instead, call /api/me with credentials:include so the cookie is sent automatically.
+    // A successful response means we have a valid session; 401 means logged out.
+    fetch(`${API_BASE}/api/me`, { credentials: 'include' })
+      .then(res => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then(data => {
+        if (data && data.id) {
+          setUser({ id: data.id, email: data.email });
+        }
+      })
+      .catch(() => {
+        // Network error or not logged in — stay on login page
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('draftly_token');
-    localStorage.removeItem('draftly_user');
-    setToken(null);
+  const handleLogout = async () => {
+    // Clear the httpOnly cookie server-side
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include'
+    }).catch(() => {});
     setUser(null);
   };
 
-  if (!token) {
+  if (loading) {
+    // Avoid flash of login page while checking session
+    return null;
+  }
+
+  if (!user) {
     return <Login apiBase={API_BASE} />;
   }
 
-  return <Dashboard token={token} user={user} apiBase={API_BASE} onLogout={handleLogout} />;
+  return <Dashboard user={user} apiBase={API_BASE} onLogout={handleLogout} />;
 }
 
 export default App

@@ -31,6 +31,21 @@ public class Email {
     @Column(name = "received_at")
     private LocalDateTime receivedAt;
 
+    /**
+     * The RFC 2822 Message-ID header value of the original email (e.g. <abc123@mail.gmail.com>).
+     * Used as the In-Reply-To header when sending replies — distinct from Gmail's internal threadId.
+     */
+    @Column(name = "message_id_header", length = 1000)
+    private String messageIdHeader;
+
+    /**
+     * The RFC 2822 References header chain from the original email.
+     * Appended with the original messageIdHeader when sending to maintain full thread context
+     * in non-Gmail email clients.
+     */
+    @Column(name = "references_header", columnDefinition = "TEXT")
+    private String referencesHeader;
+
     @Enumerated(EnumType.STRING)
     private EmailStatus status = EmailStatus.UNPROCESSED;
 
@@ -59,7 +74,11 @@ public class Email {
     public void setBody(String body) { this.body = body; }
     public LocalDateTime getReceivedAt() { return receivedAt; }
     public void setReceivedAt(LocalDateTime receivedAt) { this.receivedAt = receivedAt; }
+    public String getMessageIdHeader() { return messageIdHeader; }
+    public void setMessageIdHeader(String messageIdHeader) { this.messageIdHeader = messageIdHeader; }
+    public String getReferencesHeader() { return referencesHeader; }
+    public void setReferencesHeader(String referencesHeader) { this.referencesHeader = referencesHeader; }
     public EmailStatus getStatus() { return status; }
     public void setStatus(EmailStatus status) { this.status = status; }
     public LocalDateTime getCreatedAt() { return createdAt; }
-}
+}

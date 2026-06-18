@@ -13,7 +13,9 @@ spring:
       maximum-pool-size: 100
   h2:
     console:
-      enabled: true
+      # Disabled by default — never expose the H2 console in production.
+      # To enable locally: -Dspring.h2.console.enabled=true
+      enabled: false
       path: /h2-console
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
@@ -48,4 +50,6 @@ spring:
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update
+      # 'validate' — Hibernate checks schema matches entities and FAILS FAST on mismatch.
+      # Never use 'update' in production: it silently mutates tables on deploy.
+      ddl-auto: validate

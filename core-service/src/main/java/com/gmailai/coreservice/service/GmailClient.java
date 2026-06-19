@@ -91,7 +91,7 @@ public class GmailClient {
 
                 // Use the actual email timestamp from Gmail (internalDate = millis since epoch)
                 // NOT LocalDateTime.now() which was incorrect
-                Long internalDateMs = ((Number) msgBody.get("internalDate")).longValue();
+                Long internalDateMs = Long.parseLong((String) msgBody.get("internalDate"));
                 LocalDateTime receivedAt = LocalDateTime.ofInstant(
                     Instant.ofEpochMilli(internalDateMs), ZoneId.systemDefault()
                 );

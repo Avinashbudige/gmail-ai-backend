@@ -237,16 +237,35 @@ app.post('/internal/ai/generate', async (req: Request, res: Response) => {
 
   // Live Mode: Dynamic AI generation with Groq / OpenAI-compatible API
   try {
-    const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('AI API key is missing in environment variables');
+    // -------------------------------------------------------------------
+    // 1. Collect all available providers in preferred fallback order
+    // -------------------------------------------------------------------
+    const availableProviders: any[] = [];
+    
+    // Primary: Gemini
+    if (process.env.GEMINI_API_KEY) {
+      availableProviders.push({ name: 'Gemini', apiKey: process.env.GEMINI_API_KEY, providerUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', modelName: 'gemini-1.5-flash' });
+    }
+    // Secondary: Groq
+    if (process.env.GROQ_API_KEY) {
+      availableProviders.push({ name: 'Groq', apiKey: process.env.GROQ_API_KEY, providerUrl: 'https://api.groq.com/openai/v1/chat/completions', modelName: 'mixtral-8x7b-32768' });
+    }
+    // Tertiary: Sarvam AI
+    if (process.env.SARVAM_API_KEY) {
+      availableProviders.push({ name: 'Sarvam AI', apiKey: process.env.SARVAM_API_KEY, providerUrl: 'https://api.sarvam.ai/v1/chat/completions', modelName: 'sarvam-105b' });
+    }
+    // Quaternary: Mistral
+    if (process.env.MISTRAL_API_KEY) {
+      availableProviders.push({ name: 'Mistral', apiKey: process.env.MISTRAL_API_KEY, providerUrl: 'https://api.mistral.ai/v1/chat/completions', modelName: 'mistral-large-latest' });
+    }
+    // Fallback: OpenAI
+    if (process.env.OPENAI_API_KEY) {
+      availableProviders.push({ name: 'OpenAI', apiKey: process.env.OPENAI_API_KEY, providerUrl: 'https://api.openai.com/v1/chat/completions', modelName: 'gpt-4o-mini' });
     }
 
-    const providerUrl = process.env.GROQ_API_KEY
-      ? 'https://api.groq.com/openai/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions';
-
-    const modelName = process.env.GROQ_API_KEY ? 'mixtral-8x7b-32768' : 'gpt-4o-mini';
+    if (availableProviders.length === 0) {
+      throw new Error('No AI API keys are configured in environment variables');
+    }
 
     // -------------------------------------------------------------------
     // Build thread context from prior emails in the same conversation
@@ -272,7 +291,6 @@ app.post('/internal/ai/generate', async (req: Request, res: Response) => {
 
     // -------------------------------------------------------------------
     // System prompt with structural delimiters around user-supplied data.
-    // This prevents prompt injection: email bodies are data, not instructions.
     // -------------------------------------------------------------------
     const systemPrompt = `You are a helpful email assistant. Generate a reply to the incoming email.
 Tone: ${tone || 'professional'}
@@ -284,8 +302,7 @@ Rules:
 - If writing style samples are provided, match the user's natural writing style closely.${threadContext}${writingStyleContext}`;
 
     // -------------------------------------------------------------------
-    // Wrap email body in XML delimiters so the model treats it as data,
-    // not as instructions — prevents prompt injection attacks.
+    // Wrap email body in XML delimiters so the model treats it as data
     // -------------------------------------------------------------------
     const userPrompt = `Reply to this email:
 
@@ -297,49 +314,63 @@ ${body}
 </body>
 </original_email>`;
 
-    // --- Exponential Backoff Retry Logic ---
+    // -------------------------------------------------------------------
+    // Sequential LLM Routing & Automatic Fallback
+    // -------------------------------------------------------------------
     let response;
-    let retries = 3;
-    let attempt = 0;
+    let successfulProvider = null;
+    let lastError = null;
 
-    while (attempt <= retries) {
-      try {
-        response = await axios.post(providerUrl, {
-          model: modelName,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        }, {
-          headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
+    for (const provider of availableProviders) {
+      console.log(`[Gateway] Attempting AI generation with ${provider.name}...`);
+      let retries = 1; 
+      let attempt = 0;
 
-        break;
-      } catch (err: any) {
-        if (err.response && err.response.status === 429 && attempt < retries) {
-          attempt++;
-          const delayMs = Math.pow(2, attempt) * 1000;
-          console.warn(`[Gateway] Rate limited (429). Retrying attempt ${attempt} in ${delayMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          throw err;
+      while (attempt <= retries) {
+        try {
+          response = await axios.post(provider.providerUrl, {
+            model: provider.modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            temperature: 0.7,
+            max_tokens: 500
+          }, {
+            headers: { 'Authorization': `Bearer ${provider.apiKey}` },
+            timeout: 15000 // 15 second timeout to prevent hanging the queue
+          });
+
+          successfulProvider = provider.name;
+          break; // Break the internal retry loop
+        } catch (err: any) {
+          lastError = err;
+          if (err.response && err.response.status === 429 && attempt < retries) {
+            attempt++;
+            const delayMs = Math.pow(2, attempt) * 1000;
+            console.warn(`[Gateway] ${provider.name} rate limited (429). Retrying in ${delayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else {
+            const status = err.response ? err.response.status : 'Network/Timeout';
+            console.error(`[Gateway] ${provider.name} failed (${status}). Failing over to next provider...`);
+            break; // Break retry loop, move to next provider in the array
+          }
         }
+      }
+
+      if (response) {
+        break; // Successfully got a response, break the outer provider loop
       }
     }
 
     if (!response) {
-      throw new Error('AI provider did not return a response');
+      throw new Error(`All configured AI providers failed. Last error: ${lastError?.message}`);
     }
 
     const aiReply = response.data.choices[0].message.content;
-    res.json({ draft: aiReply, provider: modelName });
+    res.json({ draft: aiReply, provider: successfulProvider });
   } catch (error: any) {
     console.error('[Gateway] AI Generation Error:', error.message);
-    if (error.response && error.response.data) {
-      console.error('[Gateway] Groq API Response:', JSON.stringify(error.response.data));
-    }
     res.status(500).json({ error: 'AI generation failed', details: error.message });
   }
 });

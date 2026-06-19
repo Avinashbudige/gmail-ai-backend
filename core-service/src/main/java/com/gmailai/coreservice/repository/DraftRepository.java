@@ -7,7 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface DraftRepository extends JpaRepository<Draft, UUID> {
-    List<Draft> findByUserIdAndStatus(UUID userId, Draft.DraftStatus status);
-    List<Draft> findByUserId(UUID userId);
+    List<Draft> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, Draft.DraftStatus status);
+    List<Draft> findByUserIdOrderByCreatedAtDesc(UUID userId);
     Optional<Draft> findByEmailId(UUID emailId);
 }

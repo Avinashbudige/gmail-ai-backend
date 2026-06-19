@@ -22,7 +22,7 @@ public class DraftService {
     }
 
     public List<Map<String, Object>> getPendingDraftsWithEmail(UUID userId) {
-        List<Draft> drafts = draftRepository.findByUserIdAndStatus(userId, Draft.DraftStatus.PENDING);
+        List<Draft> drafts = draftRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, Draft.DraftStatus.PENDING);
         
         return drafts.stream().map(draft -> {
             Map<String, Object> map = new HashMap<>();
@@ -41,11 +41,11 @@ public class DraftService {
     }
 
     public List<Draft> getPendingDraftsForUser(UUID userId) {
-        return draftRepository.findByUserIdAndStatus(userId, Draft.DraftStatus.PENDING);
+        return draftRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, Draft.DraftStatus.PENDING);
     }
 
     public List<Draft> getAllDraftsForUser(UUID userId) {
-        return draftRepository.findByUserId(userId);
+        return draftRepository.findByUserIdOrderByCreatedAtDesc(userId);
     }
 
     public Draft editDraft(UUID draftId, UUID userId, String newContent) {

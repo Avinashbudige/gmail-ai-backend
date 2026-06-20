@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * UserController — handles user profile sync and preference updates.
@@ -23,21 +24,20 @@ public class UserController {
 
     private final UserService userService;
     private final GmailClient gmailClient;
+    private final com.gmailai.coreservice.service.EmailSyncService emailSyncService;
 
     @Value("${google.pubsub.topic:}")
     private String pubsubTopic;
 
-    public UserController(UserService userService, GmailClient gmailClient) {
+    public UserController(UserService userService, GmailClient gmailClient, com.gmailai.coreservice.service.EmailSyncService emailSyncService) {
         this.userService = userService;
         this.gmailClient = gmailClient;
+        this.emailSyncService = emailSyncService;
     }
 
     /**
      * Called by the gateway after OAuth callback to create/update the user record
      * and register the Gmail Pub/Sub watch subscription.
-     *
-     * Returns UserResponse (no token field) — this response is used by the gateway
-     * to build the JWT session token (id + email only).
      */
     @PostMapping("/sync-profile")
     public ResponseEntity<UserResponse> syncProfile(@RequestBody Map<String, String> request) {
@@ -48,6 +48,15 @@ public class UserController {
         if (pubsubTopic != null && !pubsubTopic.isEmpty()) {
             gmailClient.watchInbox(refreshToken, pubsubTopic);
         }
+
+        // Trigger an immediate asynchronous sync so the dashboard populates instantly!
+        CompletableFuture.runAsync(() -> {
+            try {
+                emailSyncService.syncUserEmails(user);
+            } catch (Exception e) {
+                System.err.println("[UserController] Initial sync failed for " + user.getEmail() + ": " + e.getMessage());
+            }
+        });
 
         return ResponseEntity.ok(UserResponse.from(user));
     }

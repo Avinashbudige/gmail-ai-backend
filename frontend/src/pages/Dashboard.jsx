@@ -10,6 +10,8 @@ export default function Dashboard({ user, apiBase, onLogout }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [toasts, setToasts] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   // AI Copilot State
   const [refinePrompt, setRefinePrompt] = useState('');
@@ -39,6 +41,7 @@ export default function Dashboard({ user, apiBase, onLogout }) {
 
       const data = await response.json();
       setDrafts(data);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to fetch drafts:', error);
       showToast('Failed to fetch drafts', 'error');
@@ -179,6 +182,16 @@ export default function Dashboard({ user, apiBase, onLogout }) {
     return name.charAt(0).toUpperCase();
   };
 
+  // Filter drafts by search query
+  const filteredDrafts = drafts.filter(draft => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    const subject = (draft.subject || '').toLowerCase();
+    const sender = (draft.sender || '').toLowerCase();
+    const content = (draft.generatedContent || '').toLowerCase();
+    return subject.includes(query) || sender.includes(query) || content.includes(query);
+  });
+
   const pendingCount = drafts.filter(d => d.status === 'PENDING').length;
 
   return (
@@ -233,7 +246,25 @@ export default function Dashboard({ user, apiBase, onLogout }) {
           <h1 className="topbar-title">
             {activeTab === 'pending' ? 'Pending Drafts' : 'All Drafts'}
           </h1>
-          <div className="topbar-actions">
+          <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {lastUpdated && (
+              <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                Last updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            <input
+              type="text"
+              placeholder="Search emails..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                outline: 'none',
+                width: '250px'
+              }}
+            />
             <button className="btn-icon" onClick={fetchDrafts} title="Refresh">
               🔄
             </button>
@@ -261,17 +292,17 @@ export default function Dashboard({ user, apiBase, onLogout }) {
                     <div className="skeleton" style={{ width: '100%', height: 36 }} />
                   </div>
                 ))
-              ) : drafts.length === 0 ? (
+              ) : filteredDrafts.length === 0 ? (
                 <div className="detail-empty" style={{ padding: '60px 20px' }}>
                   <div className="detail-empty-icon">📭</div>
                   <div className="detail-empty-text">
                     {activeTab === 'pending'
-                      ? 'No pending drafts. Your inbox is clear!'
-                      : 'No drafts found yet.'}
+                      ? 'No pending drafts matching your search.'
+                      : 'No drafts found matching your search.'}
                   </div>
                 </div>
               ) : (
-                drafts.map((draft, index) => (
+                filteredDrafts.map((draft, index) => (
                   <div
                     className={`draft-card fade-in ${selectedDraft?.id === draft.id ? 'active' : ''}`}
                     key={draft.id}

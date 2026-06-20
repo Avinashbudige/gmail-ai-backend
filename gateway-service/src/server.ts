@@ -383,17 +383,35 @@ app.post('/internal/ai/refine', async (req: Request, res: Response) => {
   const { originalEmail, currentDraft, userPrompt } = req.body;
 
   if (GMAIL_MODE === 'mock') {
-    return res.json({ draft: `[Mock AI Copilot Refined]: ${currentDraft}\n(Refined with: ${userPrompt})`, provider: 'mock' });
-  }
+    return res.json({ draft: `[Mock AI Copilot Refined]: ${currentDraft}\n(Refined with: ${userPrompt})`, provider: 'moc    // -------------------------------------------------------------------
+    // 1. Collect all available providers in preferred fallback order
+    // -------------------------------------------------------------------
+    const availableProviders: any[] = [];
+    
+    // Primary: Gemini
+    if (process.env.GEMINI_API_KEY) {
+      availableProviders.push({ name: 'Gemini', apiKey: process.env.GEMINI_API_KEY, providerUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', modelName: 'gemini-1.5-flash' });
+    }
+    // Secondary: Groq
+    if (process.env.GROQ_API_KEY) {
+      availableProviders.push({ name: 'Groq', apiKey: process.env.GROQ_API_KEY, providerUrl: 'https://api.groq.com/openai/v1/chat/completions', modelName: 'llama3-8b-8192' });
+    }
+    // Tertiary: Sarvam AI
+    if (process.env.SARVAM_API_KEY) {
+      availableProviders.push({ name: 'Sarvam AI', apiKey: process.env.SARVAM_API_KEY, providerUrl: 'https://api.sarvam.ai/v1/chat/completions', modelName: 'sarvam-105b' });
+    }
+    // Quaternary: Mistral
+    if (process.env.MISTRAL_API_KEY) {
+      availableProviders.push({ name: 'Mistral', apiKey: process.env.MISTRAL_API_KEY, providerUrl: 'https://api.mistral.ai/v1/chat/completions', modelName: 'mistral-large-latest' });
+    }
+    // Fallback: OpenAI
+    if (process.env.OPENAI_API_KEY) {
+      availableProviders.push({ name: 'OpenAI', apiKey: process.env.OPENAI_API_KEY, providerUrl: 'https://api.openai.com/v1/chat/completions', modelName: 'gpt-4o-mini' });
+    }
 
-  try {
-    const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
-    if (!apiKey) throw new Error('AI API key missing');
-
-    const providerUrl = process.env.GROQ_API_KEY
-      ? 'https://api.groq.com/openai/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions';
-    const modelName = process.env.GROQ_API_KEY ? 'mixtral-8x7b-32768' : 'gpt-4o-mini';
+    if (availableProviders.length === 0) {
+      throw new Error('No AI API keys are configured in environment variables');
+    }
 
     // Structural delimiters around user-controlled content (prompt injection protection)
     const systemPrompt = `You are an expert email assistant refining a draft.
@@ -410,49 +428,65 @@ ${currentDraft}
 Rule:
 - Return ONLY the refined email text. No pleasantries, no markdown blocks, no 'Here is your refined draft'. Just the exact email content to be sent.`;
 
-    // --- Exponential Backoff Retry Logic ---
+    // -------------------------------------------------------------------
+    // Sequential LLM Routing & Automatic Fallback
+    // -------------------------------------------------------------------
     let response;
-    let retries = 3;
-    let attempt = 0;
+    let successfulProvider = null;
+    let lastError = null;
 
-    while (attempt <= retries) {
-      try {
-        response = await axios.post(providerUrl, {
-          model: modelName,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Instruction: ${userPrompt}` }
-          ],
-          temperature: 0.7,
-          max_tokens: 500
-        }, {
-          headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        break;
-      } catch (err: any) {
-        if (err.response && err.response.status === 429 && attempt < retries) {
-          attempt++;
-          const delayMs = Math.pow(2, attempt) * 1000;
-          console.warn(`[Gateway] Rate limited (429). Retrying attempt ${attempt} in ${delayMs}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
-        } else {
-          throw err;
+    for (const provider of availableProviders) {
+      console.log(`[Gateway] Attempting AI refinement with ${provider.name}...`);
+      let retries = 1;
+      let attempt = 0;
+
+      while (attempt <= retries) {
+        try {
+          response = await axios.post(provider.providerUrl, {
+            model: provider.modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `Instruction: ${userPrompt}` }
+            ],
+            temperature: 0.7,
+            max_tokens: 500
+          }, {
+            headers: { 'Authorization': `Bearer ${provider.apiKey}` },
+            timeout: 15000
+          });
+
+          successfulProvider = provider.name;
+          break; // Break the internal retry loop
+        } catch (err: any) {
+          lastError = err;
+          if (err.response && err.response.status === 429 && attempt < retries) {
+            attempt++;
+            const delayMs = Math.pow(2, attempt) * 1000;
+            console.warn(`[Gateway] ${provider.name} rate limited (429). Retrying in ${delayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else {
+            const status = err.response ? err.response.status : 'Network/Timeout';
+            console.error(`[Gateway] ${provider.name} failed (${status}). Failing over to next provider...`);
+            break; // Break retry loop, move to next provider in the array
+          }
         }
+      }
+
+      if (response) {
+        break; // Successfully got a response, break the outer provider loop
       }
     }
 
     if (!response) {
-      throw new Error('AI provider did not return a response');
+      throw new Error(`All configured AI providers failed. Last error: ${lastError?.message}`);
     }
 
     const aiReply = response.data.choices[0].message.content;
-    res.json({ draft: aiReply, provider: modelName });
+    res.json({ draft: aiReply, provider: successfulProvider });
   } catch (error: any) {
     console.error('[Gateway] AI Refinement Error:', error.message);
-    if (error.response && error.response.data) {
-      console.error('[Gateway] Groq API Response:', JSON.stringify(error.response.data));
-    }
     res.status(500).json({ error: 'AI refinement failed', details: error.message });
+  }sage });
   }
 });
 

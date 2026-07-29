@@ -20,6 +20,7 @@ public class DraftService {
         this.sendService = sendService;
         this.emailRepository = emailRepository;
     }
+    
 
     public List<Map<String, Object>> getPendingDraftsWithEmail(UUID userId) {
         List<Draft> drafts = draftRepository.findByUserIdAndStatusOrderByCreatedAtDesc(userId, Draft.DraftStatus.PENDING);
